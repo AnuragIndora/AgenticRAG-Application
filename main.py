@@ -1,4 +1,3 @@
-# main.py
 from fastapi import FastAPI, HTTPException, UploadFile, File
 from pydantic import BaseModel
 from pathlib import Path
@@ -11,25 +10,22 @@ from real_time_agent import RealTimeAgentAssistant
 app = FastAPI(title="Agentic RAG System API")
 logging.basicConfig(level=logging.INFO)
 
-# Directory to store uploaded files
 UPLOAD_FOLDER = Path("uploaded_docs")
 UPLOAD_FOLDER.mkdir(exist_ok=True)
 
-# Initialize assistant (watches uploaded_docs folder)
+# The assistant starts a background thread to watch UPLOAD_FOLDER for new files
 assistant = RealTimeAgentAssistant(watch_folder=str(UPLOAD_FOLDER))
 
 
-# Request model for queries
 class QueryRequest(BaseModel):
     query: str
-    task_type: str | None = None  
+    task_type: str | None = None
 
 
 @app.post("/query")
 def query_agent(request: QueryRequest):
     try:
         result = assistant.query(request.query, task_type=request.task_type)
-
         return {
             "answer": result.answer,
             "intent": result.intent,
@@ -44,8 +40,9 @@ def query_agent(request: QueryRequest):
 
 @app.get("/status")
 def status():
-    """Return ingested files status."""
+    """Return the list of files that have already been ingested."""
     return {"ingested_files": list(assistant.ingested_files)}
+
 
 @app.post("/upload")
 def upload_file(file: UploadFile = File(...)):
@@ -59,9 +56,8 @@ def upload_file(file: UploadFile = File(...)):
     with open(dest, "wb") as f:
         shutil.copyfileobj(file.file, f)
 
-    # Structured data
+    # Structured files (CSV / Excel) go straight into Postgres, not Milvus
     if suffix in {".xlsx", ".csv"}:
-        import pandas as pd
         from postgres_client import PostgresClient
 
         db = PostgresClient()
@@ -73,27 +69,24 @@ def upload_file(file: UploadFile = File(...)):
             df = pd.read_excel(dest)
 
         db.create_table_from_dataframe(table_name, df)
-        dest.unlink()
+        dest.unlink()  # remove the temp file — the data now lives in Postgres
 
         return {"message": f"Structured data loaded into table '{table_name}'"}
 
+    # Unstructured files are picked up automatically by the folder watcher
     return {"message": "File uploaded for vector ingestion."}
 
 
 @app.delete("/reset")
 def reset_database(delete_sql: bool = False):
     """
-    Delete all ingested data.
-    :param delete_sql: If True, also clears SQL tables
+    Wipe all ingested data from Milvus.
+    Pass `?delete_sql=true` to also drop all Postgres tables.
     """
     try:
-        # Milvus
         assistant.orchestrator.ingestion_pipeline.milvus.delete_collection()
-
-        # Clear ingested files tracking
         assistant.ingested_files.clear()
 
-        # Optional SQL
         if delete_sql:
             assistant.orchestrator.structured_agent.sql_agent.delete_all_tables()
 

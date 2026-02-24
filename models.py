@@ -4,10 +4,10 @@ from typing import Literal, Optional
 from pydantic import BaseModel, Field
 
 
-# 🔥 Updated Intent Types (Hybrid System)
+# Supported high-level intent categories for the routing system
 IntentType = Literal[
     "document_qa",
-    "summarization",
+    "summarize",
     "structured_data",
     "comparison",
     "multi_hop",
@@ -15,6 +15,7 @@ IntentType = Literal[
 
 
 class ChunkRecord(BaseModel):
+    """A single text chunk produced by the ingestion pipeline."""
     text: str
     doc_id: str
     file_name: str
@@ -25,6 +26,7 @@ class ChunkRecord(BaseModel):
 
 
 class RetrievalResult(BaseModel):
+    """A chunk returned by a Milvus search, enriched with its similarity score."""
     id: int
     text: str
     doc_id: str
@@ -35,30 +37,31 @@ class RetrievalResult(BaseModel):
     score: float
 
 
-# 🔥 Query Analysis now supports structured
 class QueryAnalysis(BaseModel):
+    """Structured representation of a parsed user query before routing."""
     original_query: str
     intent: IntentType
     expanded_queries: list[str] = Field(default_factory=list)
     requires_sql: bool = False
 
 
-# 🔥 SQL Execution Result
 class SQLExecutionResult(BaseModel):
+    """Holds the raw output of a Postgres query."""
     query: str
     rows: list
     row_count: int
 
 
 class ReasoningResponse(BaseModel):
+    """Intermediate response model used before final output assembly."""
     answer: str
     confidence_score: float
     citations: list[str] = Field(default_factory=list)
     sql_query: Optional[str] = None
 
 
-# 🔥 Final agent output supports both RAG and SQL
 class AgentRunOutput(BaseModel):
+    """Final output returned by any agent to the orchestrator or API layer."""
     answer: str
     intent: IntentType
     confidence_score: float
@@ -68,17 +71,20 @@ class AgentRunOutput(BaseModel):
 
 
 class IngestResponse(BaseModel):
+    """Summary returned after a batch ingestion operation."""
     ingested_files: int
     ingested_chunks: int
     failed_files: list[str] = Field(default_factory=list)
 
 
 class QueryRequest(BaseModel):
+    """Incoming query payload for the /query API endpoint."""
     query: str
     top_k: Optional[int] = None
 
 
 class QueryResponse(BaseModel):
+    """Response shape returned by the /query API endpoint."""
     answer: str
     intent: IntentType
     confidence_score: float

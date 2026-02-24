@@ -1,21 +1,21 @@
-# agents.py
-
 from typing import List
+
 from models import AgentRunOutput, RetrievalResult
 from rag_pipeline import RAGPipeline
 from sql_agent import SQLAgent
 
 
 class DocumentAgent:
-    """
-    Handles unstructured document QA using Milvus + LLM
-    """
+    """Handles document Q&A by retrieving relevant chunks from Milvus and generating answers via LLM."""
+
     def __init__(self):
         self.rag = RAGPipeline()
 
     def handle_query(self, query: str, task_type=None) -> AgentRunOutput:
+        # Retrieve the most relevant chunks for the query
         retrieved_chunks: List[RetrievalResult] = self.rag.retrieve(query)
 
+        # Build context from the retrieved chunk texts
         context = "\n\n".join([chunk.text for chunk in retrieved_chunks])
 
         prompt = f"""
@@ -32,7 +32,6 @@ Question:
 
 Provide a clear answer.
 """
-
         answer = self.rag.ollama.generate([{"role": "user", "content": prompt}])
 
         return AgentRunOutput(
@@ -45,9 +44,8 @@ Provide a clear answer.
 
 
 class SummarizationAgent:
-    """
-    Summarizes retrieved document content
-    """
+    """Retrieves relevant document chunks and condenses them into a concise summary."""
+
     def __init__(self):
         self.rag = RAGPipeline()
 
@@ -61,12 +59,11 @@ Summarize the following content concisely:
 
 {combined_text}
 """
-
         summary = self.rag.ollama.generate([{"role": "user", "content": prompt}])
 
         return AgentRunOutput(
             answer=summary,
-            intent="summarization",
+            intent="summarize",
             confidence_score=0.8,
             reasoning_steps=["Retrieved relevant chunks", "Generated summary"],
             sources=retrieved_chunks,
@@ -74,21 +71,21 @@ Summarize the following content concisely:
 
 
 class StructuredDataAgent:
-    """
-    Handles structured data queries using SQLAgent
-    """
+    """Handles SQL-based queries against structured data stored in PostgreSQL."""
+
     def __init__(self):
         self.sql_agent = SQLAgent()
 
     def handle_query(self, query: str, task_type=None) -> AgentRunOutput:
         sql_query = self.sql_agent.generate_sql(query)
 
-        # 🔒 Basic safety guard
+        # Block any non-SELECT queries as a safety measure
         if not sql_query.strip().lower().startswith("select"):
             raise ValueError("Only SELECT queries are allowed.")
 
         result = self.sql_agent.db.execute_query(sql_query)
 
+        # Ask the LLM to turn the raw SQL result into a readable answer
         format_prompt = f"""
 User Question: {query}
 
@@ -97,7 +94,6 @@ SQL Result:
 
 Provide a clear explanation of the result.
 """
-
         answer = self.sql_agent.llm.generate([{"role": "user", "content": format_prompt}])
 
         return AgentRunOutput(

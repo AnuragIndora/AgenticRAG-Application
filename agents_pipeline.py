@@ -12,10 +12,10 @@ logger = logging.getLogger("AgentsPipeline")
 
 class AgentsOrchestrator:
     """
-    Production-ready orchestrator for routing queries to:
-    - StructuredDataAgent (SQL/database queries)
-    - DocumentAgent (unstructured QA)
-    - SummarizationAgent (summarization tasks)
+    Central router that delegates incoming queries to the right agent:
+    - StructuredDataAgent for SQL / database questions
+    - DocumentAgent for general document Q&A
+    - SummarizationAgent for summarization tasks
     """
 
     def __init__(self, metadata_ttl: int = 300):
@@ -26,30 +26,23 @@ class AgentsOrchestrator:
         self.summary_agent = SummarizationAgent()
         self.structured_agent = StructuredDataAgent()
 
-        # --- SQL metadata cache ---
+        # Cache for SQL table/column metadata so we don't query Postgres on every request
         self._cached_tables: List[str] = []
         self._cached_columns: List[str] = []
         self._metadata_last_refresh: float = 0
-        self._metadata_ttl = metadata_ttl
+        self._metadata_ttl = metadata_ttl  # seconds before the cache is considered stale
 
-        # Warm cache at startup
+        # Pre-warm the cache so the first request isn't slow
         self.get_sql_metadata()
-
-    # ============================================================
-    # SQL METADATA
-    # ============================================================
 
     def get_sql_metadata(self) -> Tuple[List[str], List[str]]:
         """
-        Fetch and cache table + column metadata with TTL.
+        Returns (tables, columns) from Postgres, refreshing the cache only when TTL has expired.
         """
         now = time.time()
 
-        # Return cached metadata if valid
-        if (
-            self._cached_tables
-            and now - self._metadata_last_refresh < self._metadata_ttl
-        ):
+        # Serve from cache if it's still fresh
+        if self._cached_tables and now - self._metadata_last_refresh < self._metadata_ttl:
             return self._cached_tables, self._cached_columns
 
         try:
@@ -60,6 +53,7 @@ class AgentsOrchestrator:
             )
             tables = [t[0] for t in tables_rows]
 
+            # Collect all column names across every table
             columns = []
             for table in tables:
                 cols = self.structured_agent.sql_agent.db.execute_query(
@@ -72,7 +66,6 @@ class AgentsOrchestrator:
                 )
                 columns.extend([c[0] for c in cols])
 
-            # Cache results
             self._cached_tables = tables
             self._cached_columns = columns
             self._metadata_last_refresh = now
@@ -83,49 +76,33 @@ class AgentsOrchestrator:
             logger.error(f"Failed to fetch SQL metadata: {e}")
             return [], []
 
-    # ============================================================
-    # SQL DETECTION
-    # ============================================================
-
     def looks_like_sql_query(self, query: str, tables: list, columns: list) -> bool:
         """
-        Score-based heuristic SQL detection to reduce false positives.
+        Score-based heuristic to decide if a query is targeting structured data.
+        Returns True when the score crosses the threshold (avoids false positives).
         """
         q = query.lower()
         score = 0
 
-        sql_keywords = [
-            "select", "from", "where",
-            "group by", "order by",
-            "join", "having"
-        ]
+        sql_keywords = ["select", "from", "where", "group by", "order by", "join", "having"]
 
-        # Strong keyword match
         if any(keyword in q for keyword in sql_keywords):
-            score += 3
+            score += 3  # generic SQL keyword hit
 
-        # Table name match
         if any(table.lower() in q for table in tables):
-            score += 2
+            score += 2  # the user mentioned a real table name
 
-        # Column name match
         if any(col.lower() in q for col in columns):
-            score += 1
+            score += 1  # the user mentioned a real column name
 
-        # Strong structural signal
+        # "select ... from ..." is a very strong structural signal
         if "select" in q and "from" in q:
             score += 5
 
         return score >= 3
 
-    # ============================================================
-    # FILE INGESTION
-    # ============================================================
-
     def ingest_file(self, file_path: str):
-        """
-        Process a document file and ingest into vector store.
-        """
+        """Load a document file, chunk it, embed it, and store in Milvus."""
         try:
             chunks = self.ingestion_pipeline.process_file(file_path)
             self.ingestion_pipeline.ingest_to_milvus(chunks)
@@ -134,30 +111,26 @@ class AgentsOrchestrator:
             logger.error(f"Failed to ingest {file_path}: {e}")
             raise
 
-    # ============================================================
-    # MAIN ROUTER
-    # ============================================================
-
     def handle_query(self, query: str, task_type=None) -> AgentRunOutput:
         """
-        Main routing logic with:
-        - Intent detection
-        - SQL heuristic override
-        - Safe fallback
-        - Structured logging
+        Main entry point for all queries. Steps:
+        1. Ask the LLM to classify the intent.
+        2. Run a SQL heuristic as a sanity check / override.
+        3. Route to the right agent.
+        4. Fall back to DocumentAgent if the structured agent explodes.
         """
         start_time = time.time()
 
         try:
-            # Step 1: LLM intent detection
+            # Step 1: LLM-based intent classification
             intent = self.router.detect_intent(query)
             logger.info(f"Detected intent: {intent}")
 
-            # Step 2: SQL heuristic check
+            # Step 2: Double-check with keyword heuristic (catches obvious SQL cases the LLM may miss)
             tables, columns = self.get_sql_metadata()
             sql_like = self.looks_like_sql_query(query, tables, columns)
 
-            # Step 3: Routing decision
+            # Step 3: Decide the final routing target
             if intent == "structured_data":
                 route = "structured_data"
             elif sql_like:
@@ -168,33 +141,21 @@ class AgentsOrchestrator:
             else:
                 route = "document_qa"
 
-            logger.info(
-                f"Routing decision: {route} | "
-                f"latency={time.time() - start_time:.2f}s"
-            )
+            logger.info(f"Routing decision: {route} | latency={time.time() - start_time:.2f}s")
 
-            # Step 4: Execute
+            # Step 4: Execute the chosen agent
             if route == "structured_data":
                 try:
-                    return self.structured_agent.handle_query(
-                        query, task_type or route
-                    )
+                    return self.structured_agent.handle_query(query, task_type or route)
                 except Exception:
-                    logger.warning(
-                        "Structured agent failed. Falling back to DocumentAgent."
-                    )
-                    return self.document_agent.handle_query(
-                        query, task_type or "document_qa"
-                    )
+                    # SQL agent failed (bad query, missing table, etc.) — fall back gracefully
+                    logger.warning("Structured agent failed. Falling back to DocumentAgent.")
+                    return self.document_agent.handle_query(query, task_type or "document_qa")
 
             if route == "summarize":
-                return self.summary_agent.handle_query(
-                    query, task_type or route
-                )
+                return self.summary_agent.handle_query(query, task_type or route)
 
-            return self.document_agent.handle_query(
-                query, task_type or "document_qa"
-            )
+            return self.document_agent.handle_query(query, task_type or "document_qa")
 
         except Exception as e:
             logger.exception("Orchestrator failure")
