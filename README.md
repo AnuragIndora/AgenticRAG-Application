@@ -1,17 +1,17 @@
 # Agentic RAG System
 
-An **Agentic Retrieval-Augmented Generation (RAG)** system that lets you query both **unstructured documents** (PDF, DOCX, PPTX, TXT, MD) and **structured data** (CSV, XLSX → PostgreSQL) using natural language. Built with FastAPI, Milvus, PostgreSQL, and a local Ollama LLM — no cloud AI needed.
+An **Agentic Retrieval-Augmented Generation (RAG)** system that lets you query both **unstructured documents** (PDF, DOCX, PPTX, TXT, MD) and **structured data** (CSV, XLSX → PostgreSQL) using natural language. Built with FastAPI, Milvus, PostgreSQL, and a local Ollama LLM — no cloud AI required.
 
 ---
 
 ## Features
 
-- 📄 **Document Q&A** — Upload files and ask questions grounded in the document content
-- 🗄️ **SQL Q&A** — Ask questions about structured data (CSVs/Excel) in plain English
-- ✂️ **Summarization** — Get concise summaries of uploaded documents
-- 🔄 **Auto-ingestion** — Drop files into the watch folder and they're indexed automatically
-- 🖥️ **Streamlit UI** — Chat interface with file upload and database reset controls
-- 🔒 **SQL Safety** — Only `SELECT` and `WITH` queries are ever executed
+* 📄 **Document Q&A** — Ask questions grounded in uploaded document content
+* 🗄️ **SQL Q&A** — Query structured data (CSV/Excel) using plain English
+* ✂️ **Summarization** — Generate concise summaries of documents
+* 🔄 **Auto-ingestion** — Drop files into the watch folder for automatic indexing
+* 🖥️ **Streamlit UI** — Chat interface with file upload and database controls
+* 🔒 **SQL Safety** — Only `SELECT` and `WITH` queries are executed
 
 ---
 
@@ -21,9 +21,9 @@ An **Agentic Retrieval-Augmented Generation (RAG)** system that lets you query b
 
 ### Routing Logic
 
-1. **IntentRouterAgent** asks the LLM to classify the query as `structured_data`, `document_qa`, or `summarize`
-2. A **score-based SQL heuristic** runs in parallel as a sanity check (catches obvious SQL queries the LLM might miss)
-3. The orchestrator routes to the right agent — and falls back to `DocumentAgent` if the SQL agent fails
+1. **IntentRouterAgent** classifies queries as `structured_data`, `document_qa`, or `summarize`
+2. A **score-based SQL heuristic** runs in parallel for sanity checks
+3. Queries are routed to the correct agent, with a fallback to `DocumentAgent` if needed
 
 ---
 
@@ -31,37 +31,28 @@ An **Agentic Retrieval-Augmented Generation (RAG)** system that lets you query b
 
 ```
 agentic_rag2/
-├── main.py                  # FastAPI app — upload, query, reset endpoints
-├── streamlit-app.py         # Chat UI
-├── agents.py                # DocumentAgent, SummarizationAgent, StructuredDataAgent
-├── agents_pipeline.py       # AgentsOrchestrator — routing + metadata caching
+├── main.py                  # FastAPI app
+├── streamlit-app.py         # Streamlit chat UI
+├── agents.py                # Document/SQL/Summarization agents
+├── agents_pipeline.py       # Orchestrator + metadata caching
 ├── intent_router_agent.py   # LLM-based intent classifier
-├── rag_pipeline.py          # Two-stage retrieval (ANN + keyword re-rank)
-├── ingestion_pipeline.py    # Load → clean → chunk → embed → insert
-├── milvuous_client.py       # Milvus connection, insert, search, re-rank
-├── ollama_client.py         # Ollama HTTP client (embed + generate)
-├── postgres_client.py       # PostgreSQL connection and query helpers
-├── sql_agent.py             # NL → SQL generation + execution
-├── text_preprocess.py       # Text cleaning and token chunking utilities
-├── models.py                # Pydantic data models
-├── settings.py              # Config loaded from .env
-├── exceptions.py            # Custom exception hierarchy
-├── logger.py                # Centralized logging setup
-└── uploaded_docs/           # Watch folder — files dropped here get auto-ingested
+├── rag_pipeline.py          # ANN + keyword re-ranking
+├── ingestion_pipeline.py    # File load → clean → chunk → embed → insert
+├── milvus_client.py         # Milvus vector DB connection
+├── postgres_client.py       # PostgreSQL connection
+├── sql_agent.py             # NL → SQL generation & execution
+├── text_preprocess.py       # Cleaning & chunking utilities
+├── ollama_client.py         # Ollama LLM client
+├── models.py                # Pydantic models
+├── settings.py              # Config (.env)
+├── exceptions.py            # Custom exceptions
+├── logger.py                # Logging setup
+├── uploaded_docs/           # Auto-ingested files
+├── data/                    # Sample files
+├── docs/                    # Markdown documentation
+├── images/                  # Diagrams and screenshots
+└── test/                    # Test files & notebooks
 ```
-
----
-
-## Tech Stack
-
-| Component | Tool | Why |
-|---|---|---|
-| API | FastAPI | Lightweight, async, clean REST |
-| Vector DB | Milvus (HNSW index) | Fast ANN search, cosine similarity |
-| SQL DB | PostgreSQL | Structured data + relational queries |
-| LLM & Embeddings | Ollama (local) | Fully local, no API keys needed |
-| Document Parsing | LlamaIndex `SimpleDirectoryReader` | Handles PDF, DOCX, PPTX, TXT, MD |
-| UI | Streamlit | Quick chat interface |
 
 ---
 
@@ -69,80 +60,67 @@ agentic_rag2/
 
 ### Prerequisites
 
-- Python 3.10+
-- [Ollama](https://ollama.ai/) running locally
-- Milvus running locally (or via Docker)
-- PostgreSQL running locally
+* Python 3.10+
+* [Ollama](https://ollama.ai/) running locally
+* Milvus (can use Docker)
+* PostgreSQL (can use Docker)
 
-### 1. Clone the repo
+### Installation
+
+1. Clone the repository:
 
 ```bash
-git clone <repo_url>
-cd agentic_rag2
+git clone https://github.com/AnuragIndora/AgenticRAG-Application.git
+cd AgenticRAG-Application
 ```
 
-### 2. Install dependencies
+2. Install dependencies:
 
 ```bash
 pip install -r requirements.txt
 ```
 
-### 3. Pull Ollama models
+3. Pull Ollama models:
 
 ```bash
-ollama pull gemma3n         # LLM for chat/generation
-ollama pull embeddinggemma  # Embedding model
+ollama pull gemma3n         # Chat/generation
+ollama pull embeddinggemma  # Embeddings
 ```
 
-### 4. Start Milvus with Docker
-
-```bash
-docker-compose -f docker-compose.milvus.yml up -d
-```
-
-### 5. Configure environment
-
-Create a `.env` file in the project root:
+4. Configure `.env`:
 
 ```env
-# FastAPI
 API_HOST=0.0.0.0
 API_PORT=8000
 
-# Milvus
 MILVUS_HOST=localhost
 MILVUS_PORT=19530
 MILVUS_COLLECTION_NAME=agentic_rag_chunks
-MILVUS_USERNAME=
-MILVUS_PASSWORD=
 EMBEDDING_DIM=768
 
-# PostgreSQL
 PG_HOST=localhost
 PG_PORT=5432
 PG_DATABASE=agentic_rag
 PG_USER=raguser
 PG_PASSWORD=ragpass
 
-# Ollama
 OLLAMA_BASE_URL=http://127.0.0.1:11434
 LLM_MODEL=gemma3n:latest
 EMBEDDING_MODEL=embeddinggemma:latest
 REQUEST_TIMEOUT_SECONDS=90
 
-# Chunking
 CHUNK_SIZE_TOKENS=1000
 CHUNK_OVERLAP_TOKENS=150
 RETRIEVAL_TOP_K=8
 ```
 
-### 6. Start the API server
+5. Start FastAPI server:
 
 ```bash
 uvicorn main:app --host 0.0.0.0 --port 8000 --reload
 ```
 
-### 7. (Optional) Start the Streamlit UI
+6. (Optional) Start Streamlit UI:
 
 ```bash
 streamlit run streamlit-app.py
@@ -153,7 +131,8 @@ streamlit run streamlit-app.py
 ## API Reference
 
 ### `POST /query`
-Send a natural language question.
+
+Send a natural language question:
 
 ```json
 {
@@ -162,7 +141,8 @@ Send a natural language question.
 }
 ```
 
-**Response:**
+Response:
+
 ```json
 {
   "answer": "...",
@@ -177,20 +157,17 @@ Send a natural language question.
 ---
 
 ### `POST /upload`
-Upload a file for ingestion.
 
-- **PDF, DOCX, PPTX, TXT, MD** → chunked, embedded, stored in Milvus
-- **CSV, XLSX** → loaded directly into a PostgreSQL table (table name = filename without extension)
+* **PDF, DOCX, PPTX, TXT, MD** → stored in Milvus
+* **CSV, XLSX** → loaded into PostgreSQL (table name = filename without extension)
 
 ```bash
-curl -X POST http://localhost:8000/upload \
-  -F "file=@report.pdf"
+curl -X POST http://localhost:8000/upload -F "file=@report.pdf"
 ```
 
 ---
 
 ### `GET /status`
-Returns the list of files already ingested.
 
 ```json
 { "ingested_files": ["report.pdf", "sales_data.csv"] }
@@ -199,107 +176,86 @@ Returns the list of files already ingested.
 ---
 
 ### `DELETE /reset`
-Wipe all Milvus vectors and clear the ingestion tracker.
 
 ```bash
-# Reset only Milvus
+# Reset Milvus only
 curl -X DELETE http://localhost:8000/reset
 
-# Also drop all PostgreSQL tables
+# Reset Milvus + PostgreSQL tables
 curl -X DELETE "http://localhost:8000/reset?delete_sql=true"
 ```
 
 ---
 
-## How Ingestion Works
+## Using Docker for Milvus & PostgreSQL (Optional)
 
-```
-File Upload
-    │
-    ├── DocumentLoader       → Reads file using LlamaIndex
-    ├── TextCleaner          → Strips control chars, BOM, normalizes whitespace
-    ├── Chunker              → Splits into overlapping token windows (1000 tokens, 150 overlap)
-    ├── OllamaClient.embed() → Generates 768-dim vector per chunk (parallel, thread pool)
-    └── MilvusVectorStore.insert() → Stores vectors + metadata
+### 1️⃣ Run Containers Directly with Docker
+
+```bash
+# Run Milvus container
+docker run -d \
+  --name milvus \
+  -p 19530:19530 \
+  milvusdb/milvus:v2.3.0
+
+# Run PostgreSQL container
+docker run -d \
+  --name pg \
+  -e POSTGRES_USER=raguser \
+  -e POSTGRES_PASSWORD=ragpass \
+  -e POSTGRES_DB=agentic_rag \
+  -p 5432:5432 \
+  postgres:15
 ```
 
-## How Retrieval Works
-
-```
-User Query
-    │
-    ├── OllamaClient.embed()       → Embed the query
-    ├── MilvusVectorStore.search() → ANN search, top-20 candidates
-    ├── keyword_filter()           → Hybrid re-rank: 80% vector + 20% keyword overlap
-    └── Top-5 chunks → LLM context → Answer
-```
+> ✅ This will start Milvus and PostgreSQL as separate containers with the specified ports and credentials.
 
 ---
 
+### 2️⃣ Using `docker-compose`
+
+If you have a `docker-compose.milvus.yml` file, you can start everything with a single command:
+
+```bash
+docker-compose -f docker-compose.milvus.yml up -d
+```
+
+* `-d` runs containers in detached mode (in the background).
+* Make sure your `docker-compose.milvus.yml` defines services for **Milvus** and **PostgreSQL**.
+
 ---
 
-## Docker Deployment
+### Pro Tips
 
-The project ships with three Docker files:
-
-| File | Purpose |
-|---|---|
-| `Dockerfile` | Multi-stage build — produces a single image used for both the API and UI |
-| `docker-compose.yml` | Spins up all 6 services: API, UI, PostgreSQL, Milvus, MinIO, etcd, Ollama |
-| `.dockerignore` | Keeps the image clean (excludes cache, notebooks, local data, `.env`) |
-
-### Build & push your image to Docker Hub
+1. To see running containers:
 
 ```bash
-# 1. Log in to Docker Hub
-docker login
-
-# 2. Build the image (replace with your Docker Hub username)
-docker build -t YOUR_DOCKERHUB_USERNAME/agentic-rag:latest .
-
-# 3. Push to Docker Hub
-docker push YOUR_DOCKERHUB_USERNAME/agentic-rag:latest
+docker ps
 ```
 
-Then update the two `image:` lines in `docker-compose.yml` with your actual username:
-```yaml
-image: YOUR_DOCKERHUB_USERNAME/agentic-rag:latest
-```
-
-### Run everything with Docker Compose
+2. To view logs for Milvus:
 
 ```bash
-# Start all services (API, UI, Postgres, Milvus, Ollama)
-docker compose up -d
-
-# Check all containers are healthy
-docker compose ps
-
-# Pull LLM models into the Ollama container (first time only)
-docker exec agentic-ollama ollama pull gemma3n
-docker exec agentic-ollama ollama pull embeddinggemma
-
-# View API logs
-docker compose logs -f api
-
-# Stop everything
-docker compose down
+docker logs -f milvus
 ```
 
-Access points after startup:
-- **FastAPI** → http://localhost:8000
-- **Streamlit UI** → http://localhost:8501
-- **API Docs** → http://localhost:8000/docs
+3. To stop containers:
 
-> **Note:** GPU support for Ollama is enabled in `docker-compose.yml` via the `deploy.resources` block.  
-> Remove that block if you're running on CPU only.
+```bash
+docker-compose -f docker-compose.milvus.yml down
+# OR
+docker stop milvus pg
+docker rm milvus pg
+```
 
 ---
 
 ## Limitations
 
-- SQL agent only supports `SELECT` and `WITH` (CTE) queries — no writes
-- Large files may use significant memory during parallel embedding
-- No user authentication or multi-tenancy
-- Summarization quality depends on how well relevant chunks are retrieved
-- Milvus `VARCHAR` fields have max-length constraints (metadata must fit within them)
+* SQL agent only supports `SELECT` and `WITH` queries
+* Large files may consume significant memory during embedding
+* No authentication or multi-tenancy
+* Summarization quality depends on retrieval
+* Milvus `VARCHAR` metadata fields have max-length constraints
+
+---

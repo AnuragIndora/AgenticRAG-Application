@@ -7,7 +7,7 @@ This system is a **multi-agent Retrieval-Augmented Generation (RAG)** platform t
 ---
 
 ## 2. High-Level Component Map
-![alt text](images/image3.png)
+![alt text](../images/image3.png)
 
 ---
 
@@ -15,7 +15,7 @@ This system is a **multi-agent Retrieval-Augmented Generation (RAG)** platform t
 
 Every incoming query goes through a **two-pass routing system** before an agent is invoked.
 
-![alt text](images/image4.png)
+![alt text](../images/image4.png)
 
 
 ### SQL Heuristic Scoring
@@ -35,7 +35,7 @@ Every incoming query goes through a **two-pass routing system** before an agent 
 
 Files dropped into `uploaded_docs/` are picked up by a background daemon thread and pushed through the full ingestion pipeline.
 
-![alt text](images/image5.png)
+![alt text](../images/image5.png)
 
 
 ### Milvus Schema
@@ -58,7 +58,7 @@ Files dropped into `uploaded_docs/` are picked up by a background daemon thread 
 
 Retrieval uses a **two-stage** strategy: broad ANN search followed by keyword-based re-ranking.
 
-![alt text](images/image6.png)
+![alt text](../images/image6.png)
 
 
 ### Hybrid Re-Rank Formula
@@ -75,19 +75,19 @@ hybrid_score = (cosine_similarity × 0.8) + (keyword_overlap_count × 0.2)
 
 CSV and XLSX files are loaded directly into PostgreSQL. Queries against them go through the SQL agent.
 
-![alt text](images/image7.png)
+![alt text](../images/image7.png)
 
 ---
 
 ## 7. Class Responsibility Summary
 
-![alt text](images/image8.png)
+![alt text](../images/image8.png)
 
 ---
 
 ## 8. Data Models (Pydantic)
 
-![alt text](images/image9.png)
+![alt text](../images/image9.png)
 
 ---
 
